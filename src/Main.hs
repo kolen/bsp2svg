@@ -24,28 +24,61 @@ data Vertex = Vertex Float Float Float
 
 data Edge = Edge Word16 Word16
 
+data Face = Face
+  { firstEdge :: Int,
+    numEdges :: Int }
+
+data FaceEdge = FaceEdge Int Bool
+
 data BSPMap = BSPMap
   { vertices :: Seq Vertex,
     edges :: Seq Edge}
 
+newtype LumpIndex a = LumpIndex Int
+
 class LumpData a where
-  lumpIndex :: a -> Int
+  lumpIndex :: LumpIndex a
   readLumpData :: LumpEntry -> Get a
   readLumpFromFile :: Handle -> Seq LumpEntry -> IO a
   readLumpFromFile fh entries = do
     bytes <- readLumpBytes fh entry
     return $ runGet (readLumpData entry) bytes
-      where entry = entries `index` (lumpIndex (undefined :: a))
+      where (LumpIndex li) = lumpIndex :: LumpIndex a
+            entry = entries `index` li
 
 instance LumpData (Seq Vertex) where
   readLumpData lump =
     readArray lump $ Vertex <$> getFloatle <*> getFloatle <*> getFloatle
-  lumpIndex = const 2
+  lumpIndex = LumpIndex 2
 
 instance LumpData (Seq Edge) where
   readLumpData lump =
     readArray lump $ Edge <$> getWord16le <*> getWord16le
-  lumpIndex = const 6
+  lumpIndex = LumpIndex 6
+
+instance LumpData (Seq Face) where
+  readLumpData lump =
+    readArray lump readFace
+    where readFace :: Get Face
+          readFace = do
+            getWord16le -- plane
+            getWord16le -- plane_side
+            _firstEdge <- getWord32le
+            _numEdges <- getWord16le
+            getWord16le -- texture_info
+            skip 4 -- lightmap_syles
+            getWord32le -- lightmap_offset
+            return $ Face (fromIntegral _firstEdge) (fromIntegral _numEdges)
+  lumpIndex = LumpIndex 6
+
+instance LumpData (Seq FaceEdge) where
+  readLumpData lump =
+    readArray lump readFaceEdge
+    where readFaceEdge :: Get FaceEdge
+          readFaceEdge = do
+            index <- getInt32le
+            return $ FaceEdge (abs (fromIntegral index)) (index < 0)
+  lumpIndex = LumpIndex 12
 
 readLumpBytes :: Handle -> LumpEntry -> IO BL.ByteString
 readLumpBytes handle (LumpEntry offset length) = do
