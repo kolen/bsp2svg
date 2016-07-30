@@ -31,8 +31,11 @@ data Face = Face
 data FaceEdge = FaceEdge Int Bool
 
 data BSPMap = BSPMap
-  { vertices :: Seq Vertex,
-    edges :: Seq Edge}
+  { bspHeader :: BSPHeader,
+    vertices  :: Seq Vertex,
+    edges     :: Seq Edge,
+    faces     :: Seq Face,
+    faceEdges :: Seq FaceEdge }
 
 newtype LumpIndex a = LumpIndex Int
 
@@ -120,19 +123,21 @@ readArray lumpEntry readItem = do
             rest <- readArray lumpEntry readItem
             return $ record <| rest
 
+readBSPMap :: Handle -> IO BSPMap
+readBSPMap fh = do
+  headerBytes <- BL.hGetContents fh
+  let header = runGet readBspHeader headerBytes
+  let lumps = lumpEntries header
+  vertices  <- readLumpFromFile fh lumps
+  edges     <- readLumpFromFile fh lumps
+  faces     <- readLumpFromFile fh lumps
+  faceEdges <- readLumpFromFile fh lumps
+  return $ BSPMap header vertices edges faces faceEdges
+
 main :: IO ()
 main = do
-  -- args <- getArgs
-  -- let filename = head args
-  -- fh <- openFile filename ReadMode
-  -- headerData <- BL.hGetContents fh
-  -- let header = runGet readBspHeader headerData
-  -- let verticesLumpEntry = lumpEntries header `index` 2
-  -- verticesLumpContents <- readLumpContents fh verticesLumpEntry
-  -- let vertices = runGet (readVertices verticesLumpEntry) verticesLumpContents
-  -- let edgesLumpEntry = lumpEntries header `index` 11
-  -- edgesLumpContents <- readLumpContents fh edgesLumpEntry
-  -- let edges = runGet (readEdges edgesLumpEntry) edgesLumpContents
-
-  -- print $ Data.Sequence.take 100 vertices
-  print ""
+  args <- getArgs
+  let filename = head args
+  fh <- openFile filename ReadMode
+  bsp <- readBSPMap fh
+  print $ Data.Sequence.take 100 (vertices bsp)
