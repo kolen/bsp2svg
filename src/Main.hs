@@ -42,10 +42,22 @@ readBspHeader = do
          else do lumps <- readLumpEntries 18
                  return $ BSPHeader magic version lumps
 
+readArray :: LumpEntry -> (Get a) -> Get (Seq a)
+readArray lumpEntry readItem = do
+  let LumpEntry _ length = lumpEntry
+  let length64 = fromIntegral length
+  bytes <- bytesRead
+  if bytes == length64
+    then return empty
+    else if bytes > length64
+    then error "Over-read"
+    else do record <- readItem
+            rest <- readArray lumpEntry readItem
+            return $ record <| rest
+
 readVertices :: LumpEntry -> Get (Seq Vertex)
-readVertices (LumpEntry _ length) =
-  replicateM numVertices $ Vertex <$> getFloatle <*> getFloatle <*> getFloatle
-  where numVertices = (fromIntegral length) `quot` (3 * 4)
+readVertices lump =
+  readArray lump $ Vertex <$> getFloatle <*> getFloatle <*> getFloatle
 
 readLumpContents :: Handle -> LumpEntry -> IO BL.ByteString
 readLumpContents handle (LumpEntry offset length) = do
