@@ -2,29 +2,30 @@ module Main where
 
 import Data.Sequence
 import Data.Word
+import System.IO
 import qualified Data.ByteString.Lazy as BL
 import Data.Binary.Get
 
-data Lump = Lump
+data LumpEntry = LumpEntry
   { _offset :: Word32,
     _length :: Word32 }
 
 data BSPHeader = BSPHeader
   { _magic :: Word32,
     _version :: Word32,
-    _lumps :: Seq Lump }
+    _lumps :: Seq LumpEntry }
 
 data Vertex = Vertex Float Float Float
 
-readLump :: Get Lump
-readLump = Lump <$> getWord32le <*> getWord32le
+readLumpEntry :: Get LumpEntry
+readLumpEntry = LumpEntry <$> getWord32le <*> getWord32le
 
-readLumps :: Integer -> Get (Seq Lump)
-readLumps count = do
+readLumpEntries :: Integer -> Get (Seq LumpEntry)
+readLumpEntries count = do
   if count == 0
     then return empty
-    else do lump <- readLump
-            rest <- readLumps (count - 1)
+    else do lump <- readLumpEntry
+            rest <- readLumpEntries (count - 1)
             return $ lump <| rest
 
 readBspHeader :: Get BSPHeader
@@ -35,13 +36,18 @@ readBspHeader = do
     then error "Invalid BSP file"
     else if version /= 38
          then error "Unsupported BSP file version"
-         else do lumps <- readLumps 18
+         else do lumps <- readLumpEntries 18
                  return $ BSPHeader magic version lumps
 
-readVertices :: Lump -> Get (Seq Vertex)
-readVertices (Lump _ length) =
+readVertices :: LumpEntry -> Get (Seq Vertex)
+readVertices (LumpEntry _ length) =
   replicateM numVertices $ Vertex <$> getFloatle <*> getFloatle <*> getFloatle
   where numVertices = (fromIntegral length) `quot` (3 * 4)
+
+readLumpContents :: Handle -> LumpEntry -> IO BL.ByteString
+readLumpContents handle (LumpEntry offset length) = do
+  hSeek handle AbsoluteSeek (fromIntegral offset)
+  BL.hGet handle (fromIntegral length)
 
 main :: IO ()
 main = do
