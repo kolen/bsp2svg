@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module Main where
 
 import Data.Sequence (Seq, empty, index, (<|))
@@ -11,6 +13,19 @@ import System.Environment
 import Numeric (showHex)
 import qualified Data.ByteString.Lazy as BL
 import Data.Binary.Get
+
+newtype VertexID   = VertexID   { vertexID   :: Int }
+newtype EdgeID     = EdgeID     { edgeID     :: Int }
+newtype FaceID     = FaceID     { faceID     :: Int }
+newtype FaceEdgeID = FaceEdgeID { faceEdgeId :: Int }
+
+class ID i e | i -> e where
+  byID :: BSPMap -> i -> e
+
+instance ID VertexID   Vertex   where byID m (VertexID i)   = vertices m `index` i
+instance ID EdgeID     Edge     where byID m (EdgeID i)     = edges m `index` i
+instance ID FaceID     Face     where byID m (FaceID i)     = faces m `index` i
+instance ID FaceEdgeID FaceEdge where byID m (FaceEdgeID i) = faceEdges m `index` i
 
 data LumpEntry = LumpEntry
   { _offset :: Word32,
@@ -24,15 +39,13 @@ data BSPHeader = BSPHeader
 data Vertex = Vertex Float Float Float
   deriving (Show)
 
-data Edge = Edge Int Int
+data Edge = Edge VertexID VertexID
 
 data Face = Face
-  { firstEdge :: Int,
+  { firstEdge :: EdgeID,
     numEdges :: Int }
-  deriving (Show)
 
-data FaceEdge = FaceEdge Int Bool
-  deriving (Show)
+data FaceEdge = FaceEdge EdgeID Bool
 
 data BSPMap = BSPMap
   { bspHeader :: BSPHeader,
@@ -60,8 +73,8 @@ instance LumpData (Seq Vertex) where
 
 instance LumpData (Seq Edge) where
   readLumpData lump =
-    readArray lump $ Edge <$> (fromIntegral <$> getWord16le)
-                          <*> (fromIntegral <$> getWord16le)
+    readArray lump $ Edge <$> (VertexID <$> fromIntegral <$> getWord16le)
+                          <*> (VertexID <$> fromIntegral <$> getWord16le)
   lumpIndex = LumpIndex 6
 
 instance LumpData (Seq Face) where
@@ -76,7 +89,8 @@ instance LumpData (Seq Face) where
             getWord16le -- texture_info
             skip 4 -- lightmap_syles
             getWord32le -- lightmap_offset
-            return $ Face (fromIntegral _firstEdge) (fromIntegral _numEdges)
+            return $ Face (EdgeID $ fromIntegral _firstEdge)
+                          (fromIntegral _numEdges)
   lumpIndex = LumpIndex 6
 
 instance LumpData (Seq FaceEdge) where
@@ -85,7 +99,7 @@ instance LumpData (Seq FaceEdge) where
     where readFaceEdge :: Get FaceEdge
           readFaceEdge = do
             index <- getInt32le
-            return $ FaceEdge (abs (fromIntegral index)) (index < 0)
+            return $ FaceEdge (EdgeID (abs (fromIntegral index))) (index < 0)
   lumpIndex = LumpIndex 12
 
 readLumpBytes :: Handle -> LumpEntry -> IO BL.ByteString
@@ -139,15 +153,15 @@ faceVertices bsp faceId =
     faceEdgeVertices face = toList $ edgeVertices <$> (faceEdges' face)
     faceEdges' :: Face -> Seq FaceEdge
     faceEdges' (Face firstEdge numEdges) =
-      S.take numEdges (S.drop firstEdge (faceEdges bsp))
+      S.take numEdges (S.drop (edgeID firstEdge) (faceEdges bsp))
     edgeVertices :: FaceEdge -> (Vertex, Vertex)
     edgeVertices (FaceEdge edgeId reverse) =
       case reverse of
         True  -> (v2, v1)
         False -> (v1, v2)
-      where v1 = (vertices bsp) `index` v1id
-            v2 = (vertices bsp) `index` v2id
-            Edge v1id v2id = ((edges bsp) `index` edgeId)
+      where v1 = byID bsp v1id
+            v2 = byID bsp v2id
+            Edge v1id v2id = byID bsp edgeId
     face :: Face
     face = faces bsp `index` faceId
 
@@ -168,4 +182,4 @@ main = do
   let filename = head args
   fh <- openFile filename ReadMode
   bsp <- readBSPMap fh
-  print $ Data.Sequence.take 100 (vertices bsp)
+  print ""
