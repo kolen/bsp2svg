@@ -2,7 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
-import Data.Sequence
+import Data.Sequence (Seq, empty, index, (<|))
+import qualified Data.Sequence as S
+import Data.Foldable (toList)
 import Data.Word
 import System.IO
 import System.Environment
@@ -22,13 +24,15 @@ data BSPHeader = BSPHeader
 data Vertex = Vertex Float Float Float
   deriving (Show)
 
-data Edge = Edge Word16 Word16
+data Edge = Edge Int Int
 
 data Face = Face
   { firstEdge :: Int,
     numEdges :: Int }
+  deriving (Show)
 
 data FaceEdge = FaceEdge Int Bool
+  deriving (Show)
 
 data BSPMap = BSPMap
   { bspHeader :: BSPHeader,
@@ -56,7 +60,8 @@ instance LumpData (Seq Vertex) where
 
 instance LumpData (Seq Edge) where
   readLumpData lump =
-    readArray lump $ Edge <$> getWord16le <*> getWord16le
+    readArray lump $ Edge <$> (fromIntegral <$> getWord16le)
+                          <*> (fromIntegral <$> getWord16le)
   lumpIndex = LumpIndex 6
 
 instance LumpData (Seq Face) where
@@ -122,6 +127,29 @@ readArray lumpEntry readItem = do
     else do record <- readItem
             rest <- readArray lumpEntry readItem
             return $ record <| rest
+
+faceVertices :: BSPMap -> Int -> [Vertex]
+faceVertices bsp faceId =
+  foldr combine [] (faceEdgeVertices face)
+  where
+    combine :: (Vertex, Vertex) -> [Vertex] -> [Vertex]
+    combine (v1, v2) [] = [v1, v2]
+    combine (v1, _)  l  = v1 : l
+    faceEdgeVertices :: Face -> [(Vertex, Vertex)]
+    faceEdgeVertices face = toList $ edgeVertices <$> (faceEdges' face)
+    faceEdges' :: Face -> Seq FaceEdge
+    faceEdges' (Face firstEdge numEdges) =
+      S.take numEdges (S.drop firstEdge (faceEdges bsp))
+    edgeVertices :: FaceEdge -> (Vertex, Vertex)
+    edgeVertices (FaceEdge edgeId reverse) =
+      case reverse of
+        True  -> (v2, v1)
+        False -> (v1, v2)
+      where v1 = (vertices bsp) `index` v1id
+            v2 = (vertices bsp) `index` v2id
+            Edge v1id v2id = ((edges bsp) `index` edgeId)
+    face :: Face
+    face = faces bsp `index` faceId
 
 readBSPMap :: Handle -> IO BSPMap
 readBSPMap fh = do
