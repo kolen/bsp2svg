@@ -75,7 +75,7 @@ instance LumpData (Seq Edge) where
   readLumpData lump =
     readArray lump $ Edge <$> (VertexID <$> fromIntegral <$> getWord16le)
                           <*> (VertexID <$> fromIntegral <$> getWord16le)
-  lumpIndex = LumpIndex 6
+  lumpIndex = LumpIndex 11
 
 instance LumpData (Seq Face) where
   readLumpData lump =
