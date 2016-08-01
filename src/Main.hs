@@ -10,6 +10,8 @@ import Data.Foldable (toList)
 import Data.Word
 import System.IO
 import System.Environment
+import Data.List (intercalate)
+import Data.Foldable (for_)
 import Numeric (showHex)
 import qualified Data.ByteString.Lazy as BL
 import Data.Binary.Get
@@ -36,7 +38,10 @@ data BSPHeader = BSPHeader
     _version :: Word32,
     lumpEntries :: Seq LumpEntry }
 
-data Vertex = Vertex Float Float Float
+data Vertex = Vertex
+  { vertexX :: Float,
+    vertexY :: Float,
+    vertexZ :: Float }
   deriving (Show)
 
 data Edge = Edge VertexID VertexID
@@ -176,10 +181,36 @@ readBSPMap fh = do
   faceEdges <- readLumpFromFile fh lumps
   return $ BSPMap header vertices edges faces faceEdges
 
+polylineForFace :: [Vertex] -> String
+polylineForFace vertices = "<polyline points=\"" ++
+  points ++  "\" stroke=\"#000\" stroke-width=\"1\" fill=\"none\" />"
+  where points = intercalate ", " $ point <$> vertices
+        point (Vertex x y z) = (show $ x + 2000) ++ " " ++ (show $ y + 2000)
+
 main :: IO ()
 main = do
   args <- getArgs
   let filename = head args
   fh <- openFile filename ReadMode
   bsp <- readBSPMap fh
-  print ""
+
+  h <- openFile "/tmp/out.svg" WriteMode
+
+  let vs = vertices bsp
+  let viewport =
+        (+ 2000) <$> [(minimum $ vertexX <$> vs), (minimum $ vertexY <$> vs),
+                      (maximum $ vertexX <$> vs), (maximum $ vertexY <$> vs)]
+  let viewport' = [minX, minY, (maxX-minX), (maxY-minY)] where
+        minX : minY : maxX : maxY : _ = viewport
+  let viewportS = intercalate " " (show <$> viewport')
+  hPutStrLn h $
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"" ++
+    viewportS ++  "\">"
+
+  let printFace :: Handle -> BSPMap -> Int -> IO ()
+      printFace h bsp = hPutStrLn h . polylineForFace . faceVertices bsp
+
+    in for_ [0 .. (length $ faces bsp) - 1] (printFace h bsp)
+
+  hPutStrLn h "</svg>"
+  hClose h
