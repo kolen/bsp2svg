@@ -10,7 +10,7 @@ import Data.Foldable (toList)
 import Data.Word
 import System.IO
 import System.Environment
-import Data.List (intercalate)
+import Data.List (concat, intersperse, intercalate)
 import Data.Foldable (for_)
 import Numeric (showHex)
 import qualified Data.ByteString.Lazy as BL
@@ -155,7 +155,7 @@ faceVertexIds bsp faceId =
   foldr combine [] (faceEdgeVertices $ byID bsp faceId)
   where
     combine :: (VertexID, VertexID) -> [VertexID] -> [VertexID]
-    combine (v1, v2) [] = [v1, v2]
+    combine (v1, v2) [] = [v1]
     combine (v1, _)  l  = v1 : l
     faceEdgeVertices :: Face -> [(VertexID, VertexID)]
     faceEdgeVertices face = toList $ edgeVertices <$> (faceEdges' face)
@@ -186,6 +186,15 @@ polylineForFace vertices = "<polyline points=\"" ++
   where points = intercalate ", " $ point <$> vertices
         point (Vertex x y z) = (show $ x + 2000) ++ " " ++ (show $ y + 2000)
 
+writeObjLine :: Show a => Handle -> String -> [a] -> IO ()
+writeObjLine h prefix items = hPutStrLn h $ concat chunks
+  where chunks = prefix : " " : (intersperse " " $ show <$> items)
+
+writeObj :: Handle -> [Vertex] -> [[VertexID]] -> IO ()
+writeObj h vertices faces = do
+  for_ vertices $ writeObjLine h "v" . \(Vertex x y z) -> [x, z, y]
+  for_ faces    $ writeObjLine h "f" . fmap (succ . vertexID)
+
 main :: IO ()
 main = do
   args <- getArgs
@@ -193,22 +202,24 @@ main = do
   fh <- openFile filename ReadMode
   bsp <- readBSPMap fh
 
-  h <- openFile "/tmp/out.svg" WriteMode
+  h <- openFile "/tmp/out.obj" WriteMode
 
-  let vs = vertices bsp
-  let viewport =
-        (+ 2000) <$> [(minimum $ vertexX <$> vs), (minimum $ vertexY <$> vs),
-                      (maximum $ vertexX <$> vs), (maximum $ vertexY <$> vs)]
-  let viewport' = [minX, minY, (maxX-minX), (maxY-minY)] where
-        minX : minY : maxX : maxY : _ = viewport
-  let viewportS = intercalate " " (show <$> viewport')
-  hPutStrLn h $
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"" ++
-    viewportS ++  "\">"
+  -- let vs = vertices bsp
+  -- let viewport =
+  --       (+ 2000) <$> [(minimum $ vertexX <$> vs), (minimum $ vertexY <$> vs),
+  --                     (maximum $ vertexX <$> vs), (maximum $ vertexY <$> vs)]
+  -- let viewport' = [minX, minY, (maxX-minX), (maxY-minY)] where
+  --       minX : minY : maxX : maxY : _ = viewport
+  -- let viewportS = intercalate " " (show <$> viewport')
+  -- hPutStrLn h $
+  --   "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"" ++
+  --   viewportS ++  "\">"
 
-  let printFace :: Handle -> BSPMap -> FaceID -> IO ()
-      printFace h bsp = hPutStrLn h . polylineForFace . faceVertices bsp
-    in for_ [0 .. (length $ faces bsp) - 1] $ \id -> printFace h bsp (FaceID id)
+  -- let printFace :: Handle -> BSPMap -> FaceID -> IO ()
+  --     printFace h bsp = hPutStrLn h . polylineForFace . faceVertices bsp
+  --   in for_ [0 .. (length $ faces bsp) - 1] $ \id -> printFace h bsp (FaceID id)
 
-  hPutStrLn h "</svg>"
+  -- hPutStrLn h "</svg>"
+
+  writeObj h (toList $ vertices bsp) (faceVertexIds bsp . FaceID <$> [0 .. (length $ faces bsp) - 1])
   hClose h
