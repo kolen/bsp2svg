@@ -148,25 +148,26 @@ readArray lumpEntry readItem = do
             return $ record <| rest
 
 faceVertices :: BSPMap -> Int -> [Vertex]
-faceVertices bsp faceId =
+faceVertices bsp id = (byID bsp) <$> (faceVertexIds bsp id)
+
+faceVertexIds :: BSPMap -> Int -> [VertexID]
+faceVertexIds bsp faceId =
   foldr combine [] (faceEdgeVertices face)
   where
-    combine :: (Vertex, Vertex) -> [Vertex] -> [Vertex]
+    combine :: (VertexID, VertexID) -> [VertexID] -> [VertexID]
     combine (v1, v2) [] = [v1, v2]
     combine (v1, _)  l  = v1 : l
-    faceEdgeVertices :: Face -> [(Vertex, Vertex)]
+    faceEdgeVertices :: Face -> [(VertexID, VertexID)]
     faceEdgeVertices face = toList $ edgeVertices <$> (faceEdges' face)
     faceEdges' :: Face -> Seq FaceEdge
     faceEdges' (Face firstEdge numEdges) =
       S.take numEdges (S.drop (edgeID firstEdge) (faceEdges bsp))
-    edgeVertices :: FaceEdge -> (Vertex, Vertex)
+    edgeVertices :: FaceEdge -> (VertexID, VertexID)
     edgeVertices (FaceEdge edgeId reverse) =
       case reverse of
         True  -> (v2, v1)
         False -> (v1, v2)
-      where v1 = byID bsp v1id
-            v2 = byID bsp v2id
-            Edge v1id v2id = byID bsp edgeId
+      where Edge v1 v2 = byID bsp edgeId
     face :: Face
     face = faces bsp `index` faceId
 
