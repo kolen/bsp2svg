@@ -147,12 +147,12 @@ readArray lumpEntry readItem = do
             rest <- readArray lumpEntry readItem
             return $ record <| rest
 
-faceVertices :: BSPMap -> Int -> [Vertex]
+faceVertices :: BSPMap -> FaceID -> [Vertex]
 faceVertices bsp id = (byID bsp) <$> (faceVertexIds bsp id)
 
-faceVertexIds :: BSPMap -> Int -> [VertexID]
+faceVertexIds :: BSPMap -> FaceID -> [VertexID]
 faceVertexIds bsp faceId =
-  foldr combine [] (faceEdgeVertices face)
+  foldr combine [] (faceEdgeVertices $ byID bsp faceId)
   where
     combine :: (VertexID, VertexID) -> [VertexID] -> [VertexID]
     combine (v1, v2) [] = [v1, v2]
@@ -168,8 +168,6 @@ faceVertexIds bsp faceId =
         True  -> (v2, v1)
         False -> (v1, v2)
       where Edge v1 v2 = byID bsp edgeId
-    face :: Face
-    face = faces bsp `index` faceId
 
 readBSPMap :: Handle -> IO BSPMap
 readBSPMap fh = do
@@ -208,10 +206,9 @@ main = do
     "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"" ++
     viewportS ++  "\">"
 
-  let printFace :: Handle -> BSPMap -> Int -> IO ()
+  let printFace :: Handle -> BSPMap -> FaceID -> IO ()
       printFace h bsp = hPutStrLn h . polylineForFace . faceVertices bsp
-
-    in for_ [0 .. (length $ faces bsp) - 1] (printFace h bsp)
+    in for_ [0 .. (length $ faces bsp) - 1] $ \id -> printFace h bsp (FaceID id)
 
   hPutStrLn h "</svg>"
   hClose h
